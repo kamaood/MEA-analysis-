@@ -1,0 +1,249 @@
+---
+title: "pre treatment all plates div22"
+author: "Kara O'Driscoll"
+date: "2024-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list=objects())
+library(tidyverse)
+library(stringr)  
+library(dplyr) 
+library(ggfortify)
+library(cowplot)
+library(readr)
+library(RColorBrewer)
+
+
+Path_to_working_directory <- "/Users/karaodriscoll/Documents/Lab Masters/all plates just before treatment"
+setwd(Path_to_working_directory) #sets directory to location of dataset
+#opening dataset 
+Name_of_dataset <- gsub(".*/","", Path_to_working_directory)
+list_of_files <- list.files(pattern="*.csv")
+raw_data <- read_csv(list_of_files, id = "file_name", show_col_types = FALSE)
+
+raw_data$plate <- as.numeric(str_extract(raw_data$file_name, "(?<=N)\\d+"))
+raw_data$plate <- as.factor(raw_data$plate)
+
+```
+
+```{r}
+##adding in rainplot - from https://github.com/RainCloudPlots
+
+packages <- c("cowplot", "readr", "ggplot2", "dplyr", "lavaan", "Hmisc")
+if (length(setdiff(packages, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(packages, rownames(installed.packages())))
+}
+
+# Load packages ----
+library(ggplot2)
+
+# Defining the geom_flat_violin function ----
+# Note: the below code modifies the
+# existing github page by removing a parenthesis in line 50
+
+"%||%" <- function(a, b) {
+  if (!is.null(a)) a else b
+}
+
+geom_flat_violin <- function(mapping = NULL, data = NULL, stat = "ydensity",
+                             position = "dodge", trim = TRUE, scale = "area",
+                             show.legend = NA, inherit.aes = TRUE, ...) {
+  layer(
+    data = data,
+    mapping = mapping,
+    stat = stat,
+    geom = GeomFlatViolin,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      trim = trim,
+      scale = scale,
+      ...
+    )
+  )
+}
+
+#' @rdname ggplot2-ggproto
+#' @format NULL
+#' @usage NULL
+#' @export
+GeomFlatViolin <-
+  ggproto("GeomFlatViolin", Geom,
+          setup_data = function(data, params) {
+            data$width <- data$width %||%
+              params$width %||% (resolution(data$x, FALSE) * 0.9)
+            
+            # ymin, ymax, xmin, and xmax define the bounding rectangle for each group
+            data %>%
+              group_by(group) %>%
+              mutate(
+                ymin = min(y),
+                ymax = max(y),
+                xmin = x,
+                xmax = x + width / 2
+              )
+          },
+          
+          draw_group = function(data, panel_scales, coord) {
+            # Find the points for the line to go all the way around
+            data <- transform(data,
+                              xminv = x,
+                              xmaxv = x + violinwidth * (xmax - x)
+            )
+            
+            # Make sure it's sorted properly to draw the outline
+            newdata <- rbind(
+              plyr::arrange(transform(data, x = xminv), y),
+              plyr::arrange(transform(data, x = xmaxv), -y)
+            )
+            
+            # Close the polygon: set first and last point the same
+            # Needed for coord_polar and such
+            newdata <- rbind(newdata, newdata[1, ])
+            
+            ggplot2:::ggname("geom_flat_violin", GeomPolygon$draw_panel(newdata, panel_scales, coord))
+          },
+          
+          draw_key = draw_key_polygon,
+          
+          default_aes = aes(
+            weight = 1, colour = "grey20", fill = "white", size = 0.5,
+            alpha = NA, linetype = "solid"
+          ),
+          
+          required_aes = c("x", "y")
+  )
+```
+
+```{r}
+active_electrodes <- raw_data %>%
+   filter(Well.Averages=="Number of Active Electrodes") %>%
+  mutate(across(-c(1,2,27), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Active_Electrodes")
+
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+electrodes_with_treatment_data <- left_join(active_electrodes, treatment, by = c("file_name", "plate", "well_ID"))
+
+electrodes_with_treatment_data$Active_Electrodes <- as.numeric(electrodes_with_treatment_data$Active_Electrodes)
+
+electrodes_with_treatment_data <- subset(electrodes_with_treatment_data, electrodes_with_treatment_data$Active_Electrodes != 0) #removing inavtive electrodes
+
+```
+
+plotting the number of active electrodes
+
+```{r}
+ggplot(electrodes_with_treatment_data, aes(x = `Treatment`)) +
+  geom_point(aes(y = `Active_Electrodes`, colour = plate), position = position_jitter(width = 0.15)) +
+  theme_cowplot()+
+  ylab('Active Electrodes')+
+  xlab('Treatment')+
+  ggtitle('Active Electrodes before Treatment')
+  
+```
+
+9 wells active - n3 - one well 5meo, 4 wells doi, 2 wells psilocin, 2 wells vehicle
+
+19 wells active - n1 - 5 wells 5meo, 5 wells doi, 4 wells psilocin, 5 wells vehicle
+
+24 wells active - n2 - 6 for all
+
+# number of spikes
+
+extracting the number of spikes and treatment
+
+```{r}
+number_of_spikes_data <- raw_data %>%
+  filter(Well.Averages=="Number of Spikes") %>%
+  mutate(across(-c(1,2,27), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Spikes")
+
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+spikes_with_treatment_data <- left_join(number_of_spikes_data, treatment, by = c("file_name", "plate", "well_ID"))
+
+spikes_with_treatment_data <- subset(spikes_with_treatment_data, spikes_with_treatment_data$Spikes != 0)
+
+spikes_avg <- spikes_with_treatment_data %>%
+    group_by(Treatment, plate) %>% 
+  mutate(average = mean(Spikes))
+
+```
+
+plotting the raw data
+
+```{r}
+ggplot(spikes_with_treatment_data, aes(x = Treatment))+ 
+  geom_point(aes( y = Spikes, colour = plate),position = position_jitter(width = 0.10) )
+
+
+```
+
+plotting the averaged data = to do this I averaged across wells per condition per plate
+
+```{r}
+ggplot(spikes_avg, aes(x = Treatment))+ 
+  geom_point(aes( y = average, colour = plate))
+
+```
+
+# mean firing rate
+
+extracting mean firing rate
+
+```{r}
+mean_firing_rate_data <- raw_data %>%
+  filter(Well.Averages=="Mean Firing Rate (Hz)") %>%
+  mutate(across(-c(1,2,27), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "mfr")
+
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+mfr_with_treatment_data <- left_join(mean_firing_rate_data, treatment, by = c("file_name", "plate", "well_ID"))
+
+mfr_with_treatment_data <- subset(mfr_with_treatment_data, mfr_with_treatment_data$mfr != 0)
+
+mfr_avg <- mfr_with_treatment_data %>%
+  group_by(Treatment, plate) %>% 
+  mutate(average = mean(mfr))
+```
+
+plotting mean firing rate raw data
+
+```{r}
+ggplot(mfr_avg, aes(x = Treatment))+ 
+  geom_point(aes( y = mfr, colour = plate)) 
+```
+
+plotting mean firing rate averaged data
+
+```{r}
+ggplot(mfr_avg, aes(x = Treatment)) +
+  geom_point(aes(y = average, colour = plate))
+```
