@@ -1,0 +1,505 @@
+---
+title: "div25 fold change"
+author: "Kara O'Driscoll"
+date: "2024-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## opening files
+
+I removed from the excel file data with no active electrodes / values of 0
+
+```{r}
+rm(list=objects())
+library(tidyverse)
+library(stringr)  
+library(dplyr) 
+library(ggfortify)
+library(cowplot)
+library(readr)
+library(RColorBrewer)
+
+
+Path_to_working_directory <- "/Users/karaodriscoll/Documents/Lab Masters/fold change div25"
+setwd(Path_to_working_directory) #sets directory to location of dataset
+#opening dataset 
+Name_of_dataset <- gsub(".*/","", Path_to_working_directory)
+list_of_files <- list.files(pattern="*.csv")
+raw_data <- read_csv(list_of_files, id = "file_name", show_col_types = FALSE)
+
+raw_data$Treatment <- as.factor(raw_data$Treatment) #need to make a factor to plot individual plate colours !!!!
+raw_data$Plate <- as.factor(raw_data$Plate)
+
+raw_data$Time <- as.factor(raw_data$Time)
+
+raw_data <- raw_data %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+```
+
+# insert raincloud plot
+
+```{r}
+packages <- c("cowplot", "readr", "ggplot2", "dplyr", "lavaan", "Hmisc")
+if (length(setdiff(packages, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(packages, rownames(installed.packages())))
+}
+
+# Load packages ----
+library(ggplot2)
+
+# Defining the geom_flat_violin function ----
+# Note: the below code modifies the
+# existing github page by removing a parenthesis in line 50
+
+"%||%" <- function(a, b) {
+  if (!is.null(a)) a else b
+}
+
+geom_flat_violin <- function(mapping = NULL, data = NULL, stat = "ydensity",
+                             position = "dodge", trim = TRUE, scale = "area",
+                             show.legend = NA, inherit.aes = TRUE, ...) {
+  layer(
+    data = data,
+    mapping = mapping,
+    stat = stat,
+    geom = GeomFlatViolin,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      trim = trim,
+      scale = scale,
+      ...
+    )
+  )
+}
+
+#' @rdname ggplot2-ggproto
+#' @format NULL
+#' @usage NULL
+#' @export
+GeomFlatViolin <-
+  ggproto("GeomFlatViolin", Geom,
+          setup_data = function(data, params) {
+            data$width <- data$width %||%
+              params$width %||% (resolution(data$x, FALSE) * 0.9)
+            
+            # ymin, ymax, xmin, and xmax define the bounding rectangle for each group
+            data %>%
+              group_by(group) %>%
+              mutate(
+                ymin = min(y),
+                ymax = max(y),
+                xmin = x,
+                xmax = x + width / 2
+              )
+          },
+          
+          draw_group = function(data, panel_scales, coord) {
+            # Find the points for the line to go all the way around
+            data <- transform(data,
+                              xminv = x,
+                              xmaxv = x + violinwidth * (xmax - x)
+            )
+            
+            # Make sure it's sorted properly to draw the outline
+            newdata <- rbind(
+              plyr::arrange(transform(data, x = xminv), y),
+              plyr::arrange(transform(data, x = xmaxv), -y)
+            )
+            
+            # Close the polygon: set first and last point the same
+            # Needed for coord_polar and such
+            newdata <- rbind(newdata, newdata[1, ])
+            
+            ggplot2:::ggname("geom_flat_violin", GeomPolygon$draw_panel(newdata, panel_scales, coord))
+          },
+          
+          draw_key = draw_key_polygon,
+          
+          default_aes = aes(
+            weight = 1, colour = "grey20", fill = "white", size = 0.5,
+            alpha = NA, linetype = "solid"
+          ),
+          
+          required_aes = c("x", "y")
+  )
+```
+
+# number of spikes
+
+```{r}
+shapiro.test(raw_data$`Number of Spikes`)
+```
+
+not normally distributed
+
+```{r}
+raw_data.n <- subset(raw_data, raw_data$`Number of Spikes` != 0) #removing NA and values of 0
+data_for_stats <- raw_data.n %>% 
+  drop_na(`Number of Spikes`) %>%
+  mutate("LogParameter"=log(`Number of Spikes`))
+
+model_treatment <- lm(`LogParameter` ~ Treatment * Time, data = data_for_stats) 
+ #diagnostic plots
+
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+time sig but not treatment
+
+```{r}
+ggplot(raw_data, aes(x = Time)) +
+  geom_boxplot(aes(y= `Number of Spikes`, colour = Treatment))+
+  geom_point(aes(y = `Number of Spikes`, colour = Treatment), position = position_jitter(width = .35))
+```
+
+kind of looks like an inc but not by much ?
+
+fold change
+
+```{r}
+ggplot(raw_data, aes(x = `Treatment`)) +
+  geom_boxplot(aes(y = `fold_change_spikes`, colour = Treatment))
+```
+
+```{r}
+
+ggplot(raw_data.n, aes(x = `Treatment`, y = `fold_change_spikes`, colour = `Treatment`, fill = `Treatment`))+
+   geom_flat_violin(position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA) + #adjust function adjusts the smoothness - make snmaller for less of a smooth curve 
+  geom_point(aes(y = `fold_change_spikes`, colour = Treatment), position = position_jitter(width = .15), size = 1, shape = 20)+ 
+ geom_boxplot(aes(x = `Treatment`, y = `fold_change_spikes`), outlier.shape = NA, alpha = .5, width = .1, colour = "black") +
+  ylab('fold change Number of Spikes')+
+  xlab('Treatment')+
+  coord_flip()+
+  theme_cowplot()+
+  
+  guides(fill = FALSE)+
+  ggtitle('Number of Spikes 72h treated')
+
+ggsave("raw_data.n.png")
+```
+
+stats
+
+```{r}
+model_treatment.1 <- lm(`fold_change_spikes`~ Treatment  , data = raw_data) 
+ #diagnostic plots
+
+Diagnostic_plot.1 <- autoplot(model_treatment.1, smooth.colour = NA) 
+print(Diagnostic_plot.1)
+
+
+anova(model_treatment.1)
+
+summary(aov(model_treatment.1))
+```
+
+no sig diff!
+
+# mean firing rate
+
+```{r}
+
+shapiro.test(raw_data$`Mean Firing Rate (Hz)`) 
+```
+
+not normally dis = to log
+
+```{r}
+raw_data.m <- subset(raw_data, raw_data$`Mean Firing Rate (Hz)` != 0) #removing NA and values of 0
+data_for_stats.2 <- raw_data.m %>% 
+  drop_na(`Mean Firing Rate (Hz)`) %>%
+  mutate("LogParameter"=log(`Mean Firing Rate (Hz)`))
+
+model_treatment.2 <- lm(`LogParameter` ~ Treatment  , data = data_for_stats.2) 
+ #diagnostic plots
+
+Diagnostic_plot.2 <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot.2)
+
+
+anova(model_treatment.2)
+
+summary(aov(model_treatment.2))
+```
+
+no sig
+
+fold change
+
+```{r}
+ggplot(raw_data, aes(x = `Treatment`)) +
+  geom_boxplot(aes(y = `fold_change_mfr`, colour = Treatment)) 
+```
+
+compared to before treated, only one whcihi has really changed is doi - for plate 2 but not others, then psilocin for plate 3, but once again no difference/ not a general trend of the other plates
+
+```{r}
+ggplot(raw_data.m, aes(x = `Treatment`, y = `fold_change_mfr`, colour = `Treatment`, fill = `Treatment`))+
+   geom_flat_violin(position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA) + #adjust function adjusts the smoothness - make snmaller for less of a smooth curve 
+  geom_point(aes(y = `fold_change_mfr`, colour = Treatment), position = position_jitter(width = .15), size = 1, shape = 20)+ 
+ geom_boxplot(aes(x = `Treatment`, y = `fold_change_mfr`, fill = `Treatment`), outlier.shape = NA, alpha = .5, width = .1, colour = "black") +
+  ylab('fold change Mean Firing Rate')+
+  xlab('Treatment')+
+  coord_flip()+
+  theme_cowplot()+
+  
+  guides(fill = FALSE)+
+  ggtitle('Mean Firing Rate 72h treated')
+
+ggsave("raw_data.m.png")
+```
+
+stats
+
+```{r}
+model_treatment.3 <- lm(`fold_change_mfr`~ Treatment , data = raw_data) 
+ #diagnostic plots
+
+Diagnostic_plot.3 <- autoplot(model_treatment.3, smooth.colour = NA) 
+print(Diagnostic_plot.3)
+
+
+anova(model_treatment.3)
+
+summary(aov(model_treatment.3))
+```
+
+no sig of anything
+
+# spikes per burst
+
+raw data looking at SPB
+
+```{r}
+shapiro.test(raw_data$`Number of Spikes per Burst - Avg`) 
+```
+
+not normally dis
+
+```{r}
+raw_data.s <- subset(raw_data, raw_data$`Number of Spikes per Burst - Avg` != 0) #removing NA and values of 0
+data_for_stats.5 <- raw_data.s %>% 
+  drop_na(`Number of Spikes per Burst - Avg`) %>%
+  mutate("LogParameter"=log(`Number of Spikes per Burst - Avg`))
+
+model_treatment.5 <- lm(`LogParameter` ~ Treatment * Time , data = data_for_stats.5) 
+ #diagnostic plots
+
+Diagnostic_plot.5 <- autoplot(model_treatment.5, smooth.colour = NA) 
+print(Diagnostic_plot.5)
+
+
+anova(model_treatment.5)
+
+summary(aov(model_treatment.5))
+```
+
+no sig
+
+looking at fold change
+
+```{r}
+spb_data <-  raw_data %>%
+  drop_na(`fold_change_spb`)
+```
+
+```{r}
+ggplot(spb_data, aes(x = `Treatment`)) +
+  geom_boxplot(aes(y = `fold_change_spb`, colour = Treatment)) 
+```
+
+```{r}
+ggplot(spb_data, aes(x = `Treatment`, y = `fold_change_spb`, colour = `Treatment`, fill = `Treatment`))+
+   geom_flat_violin(position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA) + #adjust function adjusts the smoothness - make snmaller for less of a smooth curve 
+  geom_point(aes(y = `fold_change_spb`, colour = Treatment), position = position_jitter(width = .15), size = 1, shape = 20)+ 
+ geom_boxplot(aes(x = `Treatment`, y = `fold_change_spb`, fill = `Treatment`), outlier.shape = NA, alpha = .5, width = .1, colour = "black") +
+  ylab('fold change Spikes per Burst')+
+  xlab('Treatment')+
+  coord_flip()+
+  theme_cowplot()+
+  guides(fill = FALSE)+
+  ggtitle('Spikes per Burst 72h treated')
+
+ggsave("spb_data.png")
+```
+
+```{r}
+model_treatment.4 <- lm(`fold_change_spb`~ Treatment , data = spb_data) 
+ #diagnostic plots
+
+Diagnostic_plot.4 <- autoplot(model_treatment.4, smooth.colour = NA) 
+print(Diagnostic_plot.4)
+
+
+anova(model_treatment.4)
+
+summary(aov(model_treatment.4))
+```
+
+noooo sig anyway
+
+# burst frequency
+
+raw data
+
+```{r}
+shapiro.test(raw_data$`Burst Frequency - Avg (Hz)`) 
+```
+
+not normally dis = log
+
+```{r}
+raw_data.b <- subset(raw_data, raw_data$`Burst Frequency - Avg (Hz)` != 0) #removing NA and values of 0
+data_for_stats.7 <- raw_data.b %>% 
+  drop_na(`Burst Frequency - Avg (Hz)`) %>%
+  mutate("LogParameter"=log(`Burst Frequency - Avg (Hz)`))
+
+model_treatment.7 <- lm(`LogParameter` ~ Treatment * Time, data = data_for_stats.7) 
+ #diagnostic plots
+
+Diagnostic_plot.7 <- autoplot(model_treatment.7, smooth.colour = NA) 
+print(Diagnostic_plot.7)
+
+
+anova(model_treatment.7)
+
+summary(aov(model_treatment.7))
+```
+
+nooo sig diff
+
+fold change
+
+```{r}
+bf_data <- raw_data %>%
+  drop_na(`fold_change_bursts`)
+```
+
+```{r}
+ggplot(bf_data, aes(x = `Treatment`)) +
+  geom_boxplot(aes(y = `fold_change_bursts`, colour = Treatment)) 
+```
+
+```{r}
+ggplot(bf_data, aes(x = `Treatment`, y = `fold_change_bursts`, colour = `Treatment`, fill = `Treatment`))+
+   geom_flat_violin(position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA) + #adjust function adjusts the smoothness - make snmaller for less of a smooth curve 
+  geom_point(aes(y = `fold_change_bursts`, colour = Treatment), position = position_jitter(width = .15), size = 1, shape = 20)+ 
+ geom_boxplot(aes(x = `Treatment`, y = `fold_change_bursts`, fill = `Treatment`), outlier.shape = NA, alpha = .5, width = .1, colour = "black") +
+  ylab('fold change Burst Frequency')+
+  xlab('Treatment')+
+  coord_flip()+
+  theme_cowplot()+
+  guides(fill = FALSE)+
+  ggtitle('Burst Frequency 72h treated')
+
+ggsave("bf_data.png")
+```
+
+```{r}
+model_treatment.6 <- lm(`fold_change_bursts`~ Treatment  , data = bf_data) 
+ #diagnostic plots
+
+Diagnostic_plot.6 <- autoplot(model_treatment.6, smooth.colour = NA) 
+print(Diagnostic_plot.6)
+
+
+anova(model_treatment.6)
+
+summary(aov(model_treatment.6))
+```
+
+also no sig
+
+# synchrony index
+
+raw data
+
+```{r}
+shapiro.test(raw_data$`Synchrony Index`) 
+```
+
+log
+
+```{r}
+raw_data.i <- subset(raw_data, raw_data$`Synchrony Index` != 0) #removing NA and values of 0
+data_for_stats.8 <- raw_data.i %>% 
+  drop_na(`Synchrony Index`) %>%
+  mutate("LogParameter"=log(`Synchrony Index`))
+
+model_treatment.8 <- lm(`LogParameter` ~ Treatment * Time , data = data_for_stats.8) 
+ #diagnostic plots
+
+Diagnostic_plot.8 <- autoplot(model_treatment.8, smooth.colour = NA) 
+print(Diagnostic_plot.8)
+
+
+anova(model_treatment.8)
+
+summary(aov(model_treatment.8))
+```
+
+NO significance
+
+fold change
+
+```{r}
+si_data <- raw_data %>%
+  drop_na(`fold_change_si`)
+```
+
+```{r}
+ggplot(si_data, aes(x = `Treatment`)) +
+  geom_boxplot(aes(y = `fold_change_si`, colour = Treatment)) 
+```
+
+```{r}
+ggplot(si_data, aes(x = `Treatment`, y = `fold_change_si`, colour = `Treatment`, fill = `Treatment`))+
+   geom_flat_violin(position = position_nudge(x = .1, y = 0), adjust = 1.5, trim = FALSE, alpha = .5, colour = NA) + #adjust function adjusts the smoothness - make snmaller for less of a smooth curve 
+  geom_point(aes(y = `fold_change_si`, colour = Treatment), position = position_jitter(width = .15), size = 1, shape = 20)+ 
+ geom_boxplot(aes(x = `Treatment`, y = `fold_change_si`, fill = `Treatment`), outlier.shape = NA, alpha = .5, width = .1, colour = "black") +
+  ylab('fold change Synchrony Index')+
+  xlab('Treatment')+
+  coord_flip()+
+  theme_cowplot()+
+  guides(fill = FALSE)+
+  ggtitle('Synchrony Index 72h treated')
+```
+
+```{r}
+model_treatment.9 <- lm(`fold_change_si`~ Treatment , data = si_data) 
+ #diagnostic plots
+
+Diagnostic_plot.9 <- autoplot(model_treatment.9, smooth.colour = NA) 
+print(Diagnostic_plot.9)
+
+
+anova(model_treatment.9)
+
+summary(aov(model_treatment.9))
+```
+
+no sig
+
+# active electrodes
+
+```{r}
+
+raw_data <- subset(raw_data, raw_data$`Active Electrodes` != 0)
+
+ggplot(raw_data, aes(x = `Treatment`)) +
+  geom_point(aes(y = `Active Electrodes`, colour = Plate), position = position_jitter(width = .05)) 
+```
+
+N3 - has 8 wells active, N2 - has all wells active , N1 has 17 wells active - added jitter to see individual plots

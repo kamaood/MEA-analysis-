@@ -1,0 +1,590 @@
+---
+title: "DIV 22-25 all plates analysis"
+author: "Kara O'Driscoll"
+date: "2024-03-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## opening files
+
+```{r}
+rm(list=objects())
+library(tidyverse)
+library(stringr)  
+library(dplyr) 
+library(ggfortify)
+library(agricolae)
+library(cowplot)
+
+#looking at treatment from day of to 1 week ish after 
+Path_to_working_directory <- "/Users/karaodriscoll/Documents/Lab Masters/all plates, 22-25 div"
+
+setwd(Path_to_working_directory) #sets directory to location of dataset
+#opening dataset 
+Name_of_dataset <- gsub(".*/","", Path_to_working_directory)
+
+list_of_files <- list.files(pattern="*.csv")
+
+raw_data <- read_csv(list_of_files, id = "file_name", show_col_types = FALSE)
+
+raw_data$day <- as.numeric(str_extract(raw_data$file_name, '(?<=DIV)\\d+')) #obtain data by day
+
+raw_data$plate <- as.numeric(str_extract(raw_data$file_name, "(?<=N)\\d+"))
+```
+
+# number of spikes
+
+```{r}
+spikes_data <- raw_data %>%
+  filter(Well.Averages=="Number of Spikes") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Number of Spikes")
+
+#if cleared, need to rerun treatment df too
+#treatment data frame 
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+#to join
+
+spikes_with_treatment_data <- left_join(spikes_data, treatment, by = c("file_name", "day", "well_ID", "plate"))
+
+
+
+```
+
+```{r}
+#normalise
+
+baseline_for_spikes <- spikes_with_treatment_data %>%
+  filter(day==22) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(Baseline_spikes=`Number of Spikes`)
+
+day23_for_spikes <- spikes_with_treatment_data %>%
+  filter(day==23) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint1_spikes=`Number of Spikes`)
+
+day24_for_spikes <- spikes_with_treatment_data %>%
+  filter(day==24) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint2_spikes=`Number of Spikes`)
+
+day25_for_spikes <- spikes_with_treatment_data %>%
+  filter(day==25) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint3_spikes=`Number of Spikes`)
+
+merged_data_spikes <- merge(baseline_for_spikes,day23_for_spikes, by = c("well_ID", "Treatment", "plate"))
+merged_data_spikes <- merge(merged_data_spikes, day24_for_spikes, by = c("well_ID", "Treatment", "plate"))
+merged_data_spikes <- merge(merged_data_spikes, day25_for_spikes, by = c("well_ID", "Treatment", "plate"))
+
+merged_data_normalised <- mutate(merged_data_spikes, "22"= Baseline_spikes - Baseline_spikes) 
+merged_data_normalised. <- mutate(merged_data_normalised, "23"= timepoint1_spikes - Baseline_spikes) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "24"= timepoint2_spikes - Baseline_spikes)
+merged_data_normalised... <- mutate(merged_data_normalised.., "25"= timepoint3_spikes - Baseline_spikes)
+
+spikes_normalised <- merged_data_normalised... %>%
+  select(-c(4:7)) %>%
+  pivot_longer(cols = c(4:7), 
+               names_to = "Day", 
+               values_to = "Normalised_data")
+spikes_normalised$Day <- as.numeric(spikes_normalised$Day)
+```
+
+```{r}
+spikes_normalised_avg <- spikes_normalised %>%
+  group_by(Treatment, Day) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+spikes_normalised_avg$Treatment <- as.factor(spikes_normalised_avg$Treatment)
+spikes_normalised_avg$Day <- as.factor(spikes_normalised_avg$Day)
+spikes_normalised_avg$plate <- as.factor(spikes_normalised_avg$plate)
+
+```
+
+```{r}
+data_for_stats <- spikes_normalised_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~ Treatment * Day, data = data_for_stats) 
+ #diagnostic plots
+
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+so only took last 5 mins from the recordings and now no sig LOLOLOLOL
+
+```{r}
+spikes_normalised_avg <- spikes_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+spikes_normalised_avg$Day <- as.numeric(spikes_normalised_avg$Day)
+
+ggplot(spikes_normalised_avg, aes(x = Day, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Number of Spikes by Treatment DIV 22-25",
+       x = "Days in vitro (DIV)",
+       y = "Normalised from baseline of Number of Spikes")+
+  theme_cowplot()
+
+ggsave("spikes_normalised_avg.png")
+```
+
+# mean firing rate
+
+```{r}
+mean_firing_rate_data <- raw_data %>%
+  filter(Well.Averages=="Mean Firing Rate (Hz)") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Mean Firing Rate (Hz)")
+
+#if cleared, need to rerun treatment df too
+#treatment data frame 
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+#to join
+
+mean_firing_rate_with_treatment_data <- left_join(mean_firing_rate_data, treatment, by = c("file_name", "day", "well_ID", "plate"))
+
+```
+
+```{r}
+#normalise
+
+baseline_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(day==22) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(Baseline_mfr=`Mean Firing Rate (Hz)`)
+
+day23_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(day==23) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint1_mfr=`Mean Firing Rate (Hz)`)
+
+day24_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(day==24) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint2_mfr=`Mean Firing Rate (Hz)`)
+
+day25_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(day==25) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint3_mfr=`Mean Firing Rate (Hz)`)
+
+merged_data_mfr <- merge(baseline_for_mfr,day23_for_mfr, by = c("well_ID", "Treatment", "plate"))
+merged_data_mfr <- merge(merged_data_mfr, day24_for_mfr, by = c("well_ID", "Treatment", "plate"))
+merged_data_mfr <- merge(merged_data_mfr, day25_for_mfr, by = c("well_ID", "Treatment", "plate"))
+
+merged_data_normalised <- mutate(merged_data_mfr, "22"= Baseline_mfr - Baseline_mfr) 
+merged_data_normalised. <- mutate(merged_data_normalised, "23"= timepoint1_mfr - Baseline_mfr) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "24"= timepoint2_mfr - Baseline_mfr)
+merged_data_normalised... <- mutate(merged_data_normalised.., "25"= timepoint3_mfr - Baseline_mfr)
+
+mfr_normalised <- merged_data_normalised... %>%
+  select(-c(4:7)) %>%
+  pivot_longer(cols = c(4:7), 
+               names_to = "Day", 
+               values_to = "Normalised_data")
+mfr_normalised$Day <- as.numeric(mfr_normalised$Day)
+
+```
+
+```{r}
+mfr_normalised_avg <- mfr_normalised %>%
+  group_by(Treatment, Day) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+
+mfr_normalised_avg$Treatment <- as.factor(mfr_normalised_avg$Treatment)
+mfr_normalised_avg$Day <- as.factor(mfr_normalised_avg$Day)
+mfr_normalised_avg$plate <- as.factor(mfr_normalised_avg$plate)
+```
+
+```{r}
+data_for_stats <- mfr_normalised_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Day, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+```{r}
+mfr_normalised_avg <- mfr_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+mfr_normalised_avg$Day <- as.numeric(mfr_normalised_avg$Day)
+
+ggplot(mfr_normalised_avg, aes(x = Day, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Mean Firing Rate by Treatment DIV 22-25",
+       x = "Days in vitro (DIV)",
+       y = "Normalised from baseline of Mean Firing Rate (Hz)")+
+  theme_cowplot()
+
+ggsave("mfr_normalised_avg.png")
+```
+
+# burst frequency
+
+```{r}
+burst_frequency <- raw_data %>%
+  filter(Well.Averages=="Burst Frequency - Avg (Hz)") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26),
+               names_to = "well_ID",
+               values_to = "bursts")
+
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#join
+burst_freq_with_treatment <- left_join(burst_frequency, treatment, by = c("file_name", "day", "well_ID", "plate"))
+
+```
+
+```{r}
+baseline_for_bf <- burst_freq_with_treatment %>%
+  filter(day==22) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(Baseline_burst=`bursts`)
+
+day23_for_bf <- burst_freq_with_treatment %>%
+  filter(day==23) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint1_burst=`bursts`)
+
+day24_for_bf <- burst_freq_with_treatment %>%
+  filter(day==24) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint2_burst=`bursts`)
+
+day25_for_bf <- burst_freq_with_treatment %>%
+  filter(day==25) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint3_burst=`bursts`)
+
+merged_data_bf <- merge(baseline_for_bf, day23_for_bf, by = c("well_ID", "Treatment", "plate"))
+merged_data_bf <- merge(merged_data_bf, day24_for_bf, by = c("well_ID", "Treatment", "plate"))
+merged_data_bf <- merge(merged_data_bf, day25_for_bf, by = c("well_ID", "Treatment", "plate"))
+
+bfmerged_data_normalised <- mutate(merged_data_bf, "22"= Baseline_burst - Baseline_burst) 
+bfmerged_data_normalised. <- mutate(bfmerged_data_normalised, "23"= timepoint1_burst - Baseline_burst) 
+bfmerged_data_normalised.. <- mutate(bfmerged_data_normalised., "24"= timepoint2_burst - Baseline_burst)
+bfmerged_data_normalised... <- mutate(bfmerged_data_normalised.., "25"= timepoint3_burst - Baseline_burst)
+
+bf_normalised <- bfmerged_data_normalised... %>%
+  select(-c(4:7)) %>%
+  pivot_longer(cols = c(4:7), 
+               names_to = "Day", 
+               values_to = "Normalised_data")
+bf_normalised$Day <- as.numeric(bf_normalised$Day)
+
+#remove no data - after normalised otherewise it removed the parameters
+bf_normalised <- na.omit(bf_normalised)
+
+```
+
+```{r}
+bf_normalised_avg <- bf_normalised %>%
+  group_by(Treatment, Day) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+
+bf_normalised_avg$Treatment <- as.factor(bf_normalised_avg$Treatment)
+bf_normalised_avg$Day <- as.factor(bf_normalised_avg$Day)
+bf_normalised_avg$plate <- as.factor(bf_normalised_avg$plate)
+```
+
+```{r}
+data_for_stats <- bf_normalised_avg %>% 
+ drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Day, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+```{r}
+TukeyHSD(aov(model_treatment), "Treatment", ordered = TRUE)
+TukeyHSD(aov(model_treatment), "Day", ordered = TRUE)
+
+
+
+summary(aov(model_treatment), test = adjusted(type = "BH"))
+```
+
+```{r}
+bf_normalised_avg <- bf_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+bf_normalised_avg$Day <- as.numeric(bf_normalised_avg$Day)
+
+ggplot(bf_normalised_avg, aes(x = Day, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Burst Frequency by Treatment DIV 22-25",
+       x = "Days in vitro (DIV)",
+       y = "Normalised from baseline of Burst Frequency (Hz)")+
+  theme_cowplot()
+
+ggsave("bf_normalised_avg.png")
+```
+
+# spikes per burst
+
+```{r}
+spikes_per_burst <- raw_data %>%
+  filter(Well.Averages=="Number of Spikes per Burst - Avg") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26),
+               names_to = "well_ID",
+               values_to = "bursts")
+
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#join
+spikes_per_burst_with_treatment <- left_join(spikes_per_burst, treatment, by = c("file_name", "day", "well_ID", "plate"))
+
+```
+
+```{r}
+baseline_for_burst <- spikes_per_burst_with_treatment %>%
+  filter(day==22) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(Baseline_burst=`bursts`)
+
+day23_for_burst <- spikes_per_burst_with_treatment %>%
+  filter(day==23) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint1_burst=`bursts`)
+
+day24_for_burst <- spikes_per_burst_with_treatment %>%
+  filter(day==24) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint2_burst=`bursts`)
+
+day25_for_burst <- spikes_per_burst_with_treatment %>%
+  filter(day==25) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint3_burst=`bursts`)
+
+merged_data_burst <- merge(baseline_for_burst, day23_for_burst, by = c("well_ID", "Treatment", "plate"))
+merged_data_burst <- merge(merged_data_burst, day24_for_burst, by = c("well_ID", "Treatment", "plate"))
+merged_data_burst <- merge(merged_data_burst, day25_for_burst, by = c("well_ID", "Treatment", "plate"))
+
+bmerged_data_normalised <- mutate(merged_data_burst, "22"= Baseline_burst - Baseline_burst) 
+bmerged_data_normalised. <- mutate(bmerged_data_normalised, "23"= timepoint1_burst - Baseline_burst) 
+bmerged_data_normalised.. <- mutate(bmerged_data_normalised., "24"= timepoint2_burst - Baseline_burst)
+bmerged_data_normalised... <- mutate(bmerged_data_normalised.., "25"= timepoint3_burst - Baseline_burst)
+
+burst_normalised <- bmerged_data_normalised... %>%
+  select(-c(4:7)) %>%
+  pivot_longer(cols = c(4:7), 
+               names_to = "Day", 
+               values_to = "Normalised_data")
+burst_normalised$Day <- as.numeric(burst_normalised$Day)
+
+#remove no data - after normalised otherewise it removed the parameters
+burst_normalised <- na.omit(burst_normalised)
+```
+
+```{r}
+burst_normalised_avg <- burst_normalised %>%
+  group_by(Treatment, Day) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+
+burst_normalised_avg$Treatment <- as.factor(burst_normalised_avg$Treatment)
+burst_normalised_avg$Day <- as.factor(burst_normalised_avg$Day)
+burst_normalised_avg$plate <- as.factor(burst_normalised_avg$plate)
+```
+
+```{r}
+data_for_stats <- burst_normalised_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Day, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+no sig
+
+```{r}
+burst_normalised_avg <- burst_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+burst_normalised_avg$Day <- as.numeric(burst_normalised_avg$Day)
+
+ggplot(burst_normalised_avg, aes(x = Day, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Spikes per Burst by Treatment DIV 22-25",
+       x = "Days in vitro (DIV)",
+       y = "Normalised from baseline of Spikes per Burst")+
+  theme_cowplot()
+
+ggsave("burst_normalised_avg.png")
+```
+
+# synchrony index
+
+```{r}
+synchrony <- raw_data %>%
+  filter(Well.Averages=="Synchrony Index") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Synchrony Index")
+
+treatment <- raw_data %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#join
+synchrony_with_treatment <- left_join(synchrony, treatment, by = c("file_name", "day", "well_ID", "plate"))
+```
+
+```{r}
+#normalise
+baseline_for_si <- synchrony_with_treatment %>%
+  filter(day==22) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(Baseline_si=`Synchrony Index`)
+
+day23_for_si <- synchrony_with_treatment %>%
+  filter(day==23) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint1_si=`Synchrony Index`)
+
+day24_for_si <- synchrony_with_treatment %>%
+  filter(day==24) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint2_si=`Synchrony Index`)
+
+day25_for_si <- synchrony_with_treatment %>%
+  filter(day==25) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "day")) %>%
+  rename(timepoint3_si=`Synchrony Index`)
+
+merged_data_si <- merge(baseline_for_si,day23_for_si, by = c("well_ID", "Treatment", "plate"))
+merged_data_si <- merge(merged_data_si, day24_for_si, by = c("well_ID", "Treatment", "plate"))
+merged_data_si <- merge(merged_data_si, day25_for_si, by = c("well_ID", "Treatment", "plate"))
+
+smerged_data_normalised <- mutate(merged_data_si, "22"= Baseline_si - Baseline_si) 
+smerged_data_normalised. <- mutate(smerged_data_normalised, "23"= timepoint1_si - Baseline_si) 
+smerged_data_normalised.. <- mutate(smerged_data_normalised., "24"= timepoint2_si - Baseline_si)
+smerged_data_normalised... <- mutate(smerged_data_normalised.., "25"= timepoint3_si - Baseline_si)
+
+si_normalised <- smerged_data_normalised... %>%
+  select(-c(4:7)) %>%
+  pivot_longer(cols = c(4:7), 
+               names_to = "Day", 
+               values_to = "Normalised_data")
+si_normalised$Day <- as.numeric(si_normalised$Day)
+
+si_normalised <- na.omit(si_normalised)
+
+```
+
+```{r}
+#averaging data
+si_normalised_avg <- si_normalised %>%
+  group_by(Treatment, Day) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+si_normalised_avg$Treatment <- as.factor(si_normalised_avg$Treatment)
+si_normalised_avg$Day <- as.factor(si_normalised_avg$Day)
+si_normalised_avg$plate <- as.factor(si_normalised_avg$plate)
+```
+
+```{r}
+data_for_stats <- si_normalised_avg %>% 
+ drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Day, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+```{r}
+si_normalised_avg <- si_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+si_normalised_avg$Day <- as.numeric(si_normalised_avg$Day)
+
+ggplot(si_normalised_avg, aes(x = Day, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Sychrony Index by Treatment DIV 22-25",
+       x = "Days in vitro (DIV)",
+       y = "Normalised from baseline of Synchrony Index")+
+  theme_cowplot()
+```

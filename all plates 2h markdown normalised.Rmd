@@ -1,0 +1,788 @@
+---
+title: "all plate analysis 15min-2h"
+author: "Kara O'Driscoll"
+date: "2024-03-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+WITHOUT N3
+
+## opening correct files
+
+```{r}
+rm(list=objects())
+library(tidyverse)
+library(stringr)  
+library(dplyr) 
+library(ggfortify)
+library(cowplot)
+
+Path_to_working_directory <- "/Users/karaodriscoll/Documents/Lab Masters/all plates, 2h treated"
+setwd(Path_to_working_directory) #sets directory to location of dataset
+#opening dataset 
+Name_of_dataset <- gsub(".*/","", Path_to_working_directory)
+list_of_files <- list.files(pattern="*.csv")
+raw_data <- read_csv(list_of_files, id = "file_name", show_col_types = FALSE)
+
+
+#want to obtain the different time points for the treatment
+raw_data_with_time_point <- raw_data %>%
+  mutate(time_point = str_extract(file_name, "(?<=\\()\\d+(?=\\)\\(000\\)\\.csv)")) %>% #basically means that it looks at all the files with N2,000 and csv then labels by what is different in the name
+ mutate(plate_number = str_extract(file_name, "(?<=N)\\d+"))
+
+raw_data_with_time_point$time_point <- as.numeric(raw_data_with_time_point$time_point)
+raw_data_with_time_point$plate_number <- as.numeric(raw_data_with_time_point$plate_number)
+raw_data_with_time_point$time_point <- as.factor(raw_data_with_time_point$time_point)
+
+```
+
+1\.
+
+# 1. number of spikes
+
+```{r}
+#NUMBER OF SPIKES
+number_of_spikes_data <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Number of Spikes") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Number_of_Spikes")
+
+#treatment data frame 
+treatment <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#combining treatment and parameter - spikes
+spikes_with_treatment_data <- left_join(number_of_spikes_data, treatment, by = c("file_name", "time_point", "well_ID"))
+
+```
+
+```{r}
+#normalize - created dfs for the different timepoints
+baseline_for_spikes <- spikes_with_treatment_data %>%
+  filter(time_point==000) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(Baseline_spikes=Number_of_Spikes)
+
+timepoint1_for_spikes <- spikes_with_treatment_data %>%
+  filter(time_point==001) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Timepoint1_spikes=Number_of_Spikes)
+
+timepoint2_for_spikes <- spikes_with_treatment_data %>% 
+  filter(time_point==002)%>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Timepoint2_spikes=Number_of_Spikes)
+
+timepoint3_for_spikes <- spikes_with_treatment_data %>%
+  filter(time_point==003)%>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Timepoint3_spikes=Number_of_Spikes)
+
+timepoint4_for_spikes <- spikes_with_treatment_data %>%
+  filter(time_point==004)%>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Timepoint4_spikes=Number_of_Spikes)
+
+timepoint5_for_spikes <- spikes_with_treatment_data %>%
+  filter(time_point==005)%>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Timepoint5_spikes=Number_of_Spikes)
+
+timepoint6_for_spikes <- spikes_with_treatment_data %>%
+  filter(time_point==006) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Timepoint6_spikes=Number_of_Spikes)
+
+
+#merging the new dfs 
+merged_data <- merge(baseline_for_spikes, timepoint1_for_spikes, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data <- merge(merged_data, timepoint2_for_spikes, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data <- merge(merged_data, timepoint3_for_spikes, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data <- merge(merged_data, timepoint4_for_spikes, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data <- merge(merged_data, timepoint5_for_spikes, by = c("well_ID", "Treatment", "plate_number.x"))  
+merged_data <- merge(merged_data, timepoint6_for_spikes, by = c("well_ID", "Treatment", "plate_number.x"))
+
+#now normalising the data, had to create new DF so that each column was included
+
+merged_data_normalised <- mutate(merged_data, "0"= merged_data$Baseline_spikes - merged_data$Baseline_spikes) 
+merged_data_normalised. <- mutate(merged_data_normalised, "15"= Timepoint1_spikes - Baseline_spikes) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "35"= Timepoint2_spikes - Baseline_spikes)
+merged_data_normalised... <- mutate(merged_data_normalised.., "55"= Timepoint3_spikes - Baseline_spikes)
+merged_data_normalised__ <- mutate(merged_data_normalised..., "75"= Timepoint4_spikes - Baseline_spikes)
+merged_data_normalised_. <- mutate(merged_data_normalised__, "95"= Timepoint5_spikes - Baseline_spikes)
+merged_data_normalised._ <- mutate(merged_data_normalised_., "115"= Timepoint6_spikes - Baseline_spikes) 
+spikes_normalised <- merged_data_normalised._ %>%
+  select(-c(4:10)) %>%
+  pivot_longer(cols = c(4:10), 
+               names_to = "Timepoint", 
+               values_to = "Normalised_data") #pivoting data allowed all the normalised data to be in one column for plotting 
+spikes_normalised$Timepoint <- as.numeric(spikes_normalised$Timepoint) 
+```
+
+```{r}
+spikes_normalised_avg <- spikes_normalised %>%
+  group_by(Treatment, Timepoint) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data)) #IQR used for geom_ribbon function but doesn't actually look that good 
+
+shapiro.test(spikes_normalised_avg$Normalised_data)
+
+spikes_normalised_avg$Treatment <- as.factor(spikes_normalised_avg$Treatment)
+spikes_normalised_avg$`plate_number.x` <- as.factor(spikes_normalised_avg$`plate_number.x`)
+spikes_normalised_avg$Timepoint <- as.factor(spikes_normalised_avg$Timepoint)
+
+#all have to be factor for ANOVA for DoF !! how excite 
+
+#but then numeric for plotting Y=UGH
+
+spikes_normalised_avg$Timepoint <- as.numeric(spikes_normalised_avg$Timepoint)
+```
+
+```{r}
+#expeerimenting with stats - three way anova 
+data_for_stats <- spikes_normalised_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+  filter(is.finite(LogParameter))
+
+
+
+model_treatment <- lm(`LogParameter`~Treatment*Timepoint, data = data_for_stats) 
+#diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+```{r}
+#post-hoc
+TukeyHSD(aov(model_treatment), "Treatment", ordered = TRUE)
+
+
+summary(aov(model_treatment), test = adjusted(type = "BH"))
+
+```
+
+2.  
+
+    ```{r}
+    spikes_normalised$Timepoint <- as.numeric(spikes_normalised$Timepoint) 
+
+    spikes_normalised_avg <- spikes_normalised_avg %>%
+      mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+    ggplot(spikes_normalised_avg, aes(x = Timepoint, colour = Treatment)) +
+      geom_line(aes(y=average)) +
+      geom_point(aes(y=Normalised_data, shape = Treatment)) +
+      labs(title = "Normalised Number of Spikes by Treatment",
+           x = "Time (mins)",
+           y = "Normalised from baseline of Number of Spikes")+
+      theme_cowplot()
+
+    ggsave("spikes_normalised_avg.png")
+    ```
+
+    so this graph: normalised treatment to before treated timepoint then subtracted number of spikes from basline - dots
+
+    anyway shows effect of treatment - 5meo compared to psilocin and vehicle but nothing else, not time
+
+    will now plot not normalised :) - did this, in separate markdown just for NoS and found that raw data was not any sig, bit also all had different starting points but also looked like doi and 5meo dec over time wherreas psilocin inc?
+
+    # 2. mean firing rate
+
+```{r}
+#MEAN FIRING RATE (Hz)
+mean_firing_rate_data <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Mean Firing Rate (Hz)") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Mean Firing Rate (Hz)")
+
+#if cleared, need to rerun treatment df too
+#treatment data frame 
+treatment <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+#to join
+
+mean_firing_rate_with_treatment_data <- left_join(mean_firing_rate_data, treatment, by = c("file_name", "time_point", "well_ID"))
+
+```
+
+```{r}
+#normalize - created dfs for the different timepoints
+baseline_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==000) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(Baseline_mfr=`Mean Firing Rate (Hz)`)
+
+timepoint1_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==001) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint1_mfr=`Mean Firing Rate (Hz)`)
+
+timepoint2_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==002) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint2_mfr=`Mean Firing Rate (Hz)`)
+
+timepoint3_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==003) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint3_mfr=`Mean Firing Rate (Hz)`)
+
+timepoint4_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==004) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint4_mfr=`Mean Firing Rate (Hz)`)
+
+timepoint5_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==005) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint5_mfr=`Mean Firing Rate (Hz)`)
+
+timepoint6_for_mfr <- mean_firing_rate_with_treatment_data %>%
+  filter(time_point==006) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint6_mfr=`Mean Firing Rate (Hz)`)
+
+#merging the new dfs 
+merged_data_mfr <- merge(baseline_for_mfr, timepoint1_for_mfr, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_mfr <- merge(merged_data_mfr, timepoint2_for_mfr, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_mfr <- merge(merged_data_mfr, timepoint3_for_mfr, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_mfr <- merge(merged_data_mfr, timepoint4_for_mfr, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_mfr <- merge(merged_data_mfr, timepoint5_for_mfr, by = c("well_ID", "Treatment", "plate_number.x"))  
+merged_data_mfr <- merge(merged_data_mfr, timepoint6_for_mfr, by = c("well_ID", "Treatment", "plate_number.x"))
+
+#now normalising the data
+
+merged_data_normalised <- mutate(merged_data_mfr, "0"= Baseline_mfr - Baseline_mfr) 
+merged_data_normalised. <- mutate(merged_data_normalised, "15"= timepoint1_mfr - Baseline_mfr) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "35"= timepoint2_mfr - Baseline_mfr)
+merged_data_normalised... <- mutate(merged_data_normalised.., "55"= timepoint3_mfr - Baseline_mfr)
+merged_data_normalised__ <- mutate(merged_data_normalised..., "75"= timepoint4_mfr - Baseline_mfr)
+merged_data_normalised_. <- mutate(merged_data_normalised__, "95"= timepoint5_mfr - Baseline_mfr)
+merged_data_normalised._ <- mutate(merged_data_normalised_., "115"= timepoint6_mfr - Baseline_mfr) 
+mfr_normalised <- merged_data_normalised._ %>%
+  select(-c(4:10)) %>%
+  pivot_longer(cols = c(4:10), 
+               names_to = "Timepoint", 
+               values_to = "Normalised_data")
+mfr_normalised$Timepoint <- as.numeric(mfr_normalised$Timepoint)
+
+```
+
+```{r}
+#averaging data
+mfr_normalised_avg <- mfr_normalised %>%
+  group_by(Treatment, Timepoint) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+shapiro.test(mfr_normalised_avg$Normalised_data)
+
+mfr_normalised_avg$Treatment <- as.factor(mfr_normalised_avg$Treatment)
+mfr_normalised_avg$`plate_number.x` <- as.factor(mfr_normalised_avg$`plate_number.x`)
+
+mfr_normalised_avg$Timepoint <- as.factor(mfr_normalised_avg$Timepoint)
+```
+
+```{r}
+#log 
+data_for_stats <- mfr_normalised_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Timepoint, data = data_for_stats) 
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+```{r}
+#post-hoc
+
+TukeyHSD(aov(model_treatment), "Treatment", ordered = TRUE)
+
+
+summary(aov(model_treatment), test = adjusted(type = "BH"))
+```
+
+also shows same as NoS
+
+```{r}
+mfr_normalised_avg$Timepoint <- as.numeric(mfr_normalised_avg$Timepoint)
+
+mfr_normalised_avg <- mfr_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+ggplot(mfr_normalised_avg, aes(x = Timepoint, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Mean Firing Rate by Treatment",
+       x = "Time (mins)",
+       y = "Normalised from baseline of Mean Firing Rate (Hz)")+
+  theme_cowplot()
+
+ggsave("mfr_normalised_avg.png")
+```
+
+ok once again: line is average, averaged by time and treatment then the dots show the individual wells ! - this is the normalised not log plotted because the log removes values of 0...
+
+# 3. burst frequency
+
+```{r}
+#extract parameter
+burst_frequency_data <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Burst Frequency - Avg (Hz)") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Burst_Frequency_(Hz)")
+
+#extract treatment
+treatment <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#joining
+burst_with_treatment <- left_join(burst_frequency_data, treatment, by = c("file_name", "time_point", "well_ID"))
+
+```
+
+```{r}
+baseline_for_burst <- burst_with_treatment %>%
+  filter(time_point==000) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(Baseline_burst=`Burst_Frequency_(Hz)`)
+
+timepoint1_for_burst <- burst_with_treatment %>%
+  filter(time_point==001) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint1_burst=`Burst_Frequency_(Hz)`)
+
+timepoint2_for_burst <- burst_with_treatment %>%
+  filter(time_point==002) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint2_burst=`Burst_Frequency_(Hz)`)
+
+timepoint3_for_burst <- burst_with_treatment %>%
+  filter(time_point==003) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint3_burst=`Burst_Frequency_(Hz)`)
+
+timepoint4_for_burst <- burst_with_treatment %>%
+  filter(time_point==004) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint4_burst=`Burst_Frequency_(Hz)`)
+
+timepoint5_for_burst <- burst_with_treatment %>%
+  filter(time_point==005) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint5_burst=`Burst_Frequency_(Hz)`)
+
+timepoint6_for_burst <- burst_with_treatment %>%
+  filter(time_point==006) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point",  "plate_number.y")) %>%
+  rename(timepoint6_burst=`Burst_Frequency_(Hz)`)
+
+#then need to combine them / MERGE
+merged_data_burst <- merge(baseline_for_burst, timepoint1_for_burst, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_burst <- merge(merged_data_burst, timepoint2_for_burst, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_burst <- merge(merged_data_burst, timepoint3_for_burst, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_burst <- merge(merged_data_burst, timepoint4_for_burst, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_burst <- merge(merged_data_burst, timepoint5_for_burst, by = c("well_ID", "Treatment", "plate_number.x"))  
+merged_data_burst <- merge(merged_data_burst, timepoint6_for_burst, by = c("well_ID", "Treatment", "plate_number.x"))
+
+#normalise
+merged_data_normalised <- mutate(merged_data_burst, "0"= Baseline_burst - Baseline_burst) 
+merged_data_normalised. <- mutate(merged_data_normalised, "15"= timepoint1_burst - Baseline_burst) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "35"= timepoint2_burst - Baseline_burst)
+merged_data_normalised... <- mutate(merged_data_normalised.., "55"= timepoint3_burst - Baseline_burst)
+merged_data_normalised__ <- mutate(merged_data_normalised..., "75"= timepoint4_burst - Baseline_burst)
+merged_data_normalised_. <- mutate(merged_data_normalised__, "95"= timepoint5_burst - Baseline_burst)
+merged_data_normalised._ <- mutate(merged_data_normalised_., "115"= timepoint6_burst - Baseline_burst) 
+
+#pivot longer - so only normalised data is there
+burst_normalised <- merged_data_normalised._ %>%
+  select(-c(4:10)) %>%
+  pivot_longer(cols = c(4:10), 
+               names_to = "Timepoint", 
+               values_to = "Normalised_data")
+
+#make numeric so can geom_line
+burst_normalised$Timepoint <- as.numeric(burst_normalised$Timepoint)
+
+#remove NA
+burst_normalised <- na.omit(burst_normalised)
+
+```
+
+```{r}
+#average
+bf_avg <- burst_normalised %>%
+  group_by(Treatment, Timepoint) %>% 
+  mutate(average = mean(Normalised_data))
+
+shapiro.test(bf_avg$Normalised_data)
+bf_avg$Treatment <- as.factor(bf_avg$Treatment)
+bf_avg$`plate_number.x` <- as.factor(bf_avg$`plate_number.x`)
+bf_avg$Timepoint <- as.factor(bf_avg$Timepoint)
+
+bf_avg$Timepoint <- as.numeric(bf_avg$Timepoint)
+```
+
+```{r}
+#statssss
+data_for_stats <- bf_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Timepoint, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+in this case - no significance !
+
+```{r}
+
+bf_avg$Timepoint <- as.numeric(bf_avg$Timepoint)
+
+bf_avg <- bf_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+ggplot(bf_avg, aes(x = Timepoint, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Burst Frequency by Treatment",
+       x = "Time (mins)",
+       y = "Normalised from baseline of Burst Frequency (Hz)")+
+  theme_cowplot()
+
+ggsave("bf_avg.png")
+```
+
+so no significance! not that many bursts / that strong either - so would say treatment doesnt increase amount / strength of bursts at 2h .
+
+# 4. spikes per burst
+
+```{r}
+number_of_spikes_per_burst_data <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Number of Spikes per Burst - Avg") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "spikes_per_burst")
+
+#extract treatment
+treatment <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#joining 
+spikes_per_burst_with_treatment_data <- left_join(number_of_spikes_per_burst_data, treatment, by = c("file_name", "time_point", "well_ID"))
+
+```
+
+```{r}
+#normalise
+
+baseline_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==000) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Baseline_spb=`spikes_per_burst`)
+
+timepoint1_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==001) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint1_spb=`spikes_per_burst`)
+
+timepoint2_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==002) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint2_spb=`spikes_per_burst`)
+
+timepoint3_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==003) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint3_spb=`spikes_per_burst`)
+
+timepoint4_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==004) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint4_spb=`spikes_per_burst`)
+
+timepoint5_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==005) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint5_spb=`spikes_per_burst`)
+
+timepoint6_for_spb <- spikes_per_burst_with_treatment_data %>%
+  filter(time_point==006) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint6_spb=`spikes_per_burst`)
+
+#then need to combine them / MERGE
+merged_data_spb <- merge(baseline_for_spb, timepoint1_for_spb, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_spb <- merge(merged_data_spb, timepoint2_for_spb, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_spb <- merge(merged_data_spb, timepoint3_for_spb, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_spb <- merge(merged_data_spb, timepoint4_for_spb, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_spb <- merge(merged_data_spb, timepoint5_for_spb, by = c("well_ID", "Treatment", "plate_number.x"))  
+merged_data_spb <- merge(merged_data_spb, timepoint6_for_spb, by = c("well_ID", "Treatment", "plate_number.x"))
+
+#normalise
+merged_data_normalised <- mutate(merged_data_spb, "0"= Baseline_spb - Baseline_spb) 
+merged_data_normalised. <- mutate(merged_data_normalised, "15"= timepoint1_spb - Baseline_spb) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "35"= timepoint2_spb - Baseline_spb)
+merged_data_normalised... <- mutate(merged_data_normalised.., "55"= timepoint3_spb - Baseline_spb)
+merged_data_normalised__ <- mutate(merged_data_normalised..., "75"= timepoint4_spb - Baseline_spb)
+merged_data_normalised_. <- mutate(merged_data_normalised__, "95"= timepoint5_spb - Baseline_spb)
+merged_data_normalised._ <- mutate(merged_data_normalised_., "115"= timepoint6_spb - Baseline_spb) 
+
+#pivot longer - so only normalised data is there
+spb_normalised <- merged_data_normalised._ %>%
+  select(-c(4:10)) %>%
+  pivot_longer(cols = c(4:10), 
+               names_to = "Timepoint", 
+               values_to = "Normalised_data")
+
+#make numeric so can geom_line
+spb_normalised$Timepoint <- as.numeric(spb_normalised$Timepoint)
+
+#remove NA
+spb_normalised <- na.omit(spb_normalised)
+
+```
+
+```{r}
+spb_normalised_avg <- spb_normalised %>%
+  group_by(Treatment, Timepoint) %>% 
+  mutate(average = mean(Normalised_data), IQR = IQR(Normalised_data))
+
+shapiro.test(spb_normalised_avg$Normalised_data)
+
+spb_normalised_avg$Treatment <- as.factor(spb_normalised_avg$Treatment)
+spb_normalised_avg$`plate_number.x` <- as.factor(spb_normalised_avg$`plate_number.x`)
+spb_normalised_avg$Timepoint <- as.factor(spb_normalised_avg$Timepoint)
+
+spb_normalised_avg$Timepoint <- as.numeric(spb_normalised_avg$Timepoint)
+```
+
+```{r}
+data_for_stats <- spb_normalised_avg %>% 
+  drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Timepoint, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+also no sig!
+
+so single-electrode bursting not affected by treatment! in first 2h
+
+```{r}
+spb_normalised_avg$Timepoint <- as.numeric(spb_normalised_avg$Timepoint)
+
+spb_normalised_avg <- spb_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+ggplot(spb_normalised_avg, aes(x = Timepoint, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Spikes per Burst by Treatment",
+       x = "Time (mins)",
+       y = "Normalised from baseline of Spikes per Burst")+
+  theme_cowplot()
+
+ggsave("spb_normalised_avg.png")
+```
+
+# 5. Synchrony Index
+
+```{r}
+#SYNCHRONY INDEX
+#extracting parameter
+synchrony_index_data <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Synchrony Index") %>%
+  mutate(across(-c(1,2,27,28), as.numeric, na.rm = TRUE)) %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Synchrony Index")
+
+#extract treatment
+treatment <- raw_data_with_time_point %>%
+  filter(Well.Averages=="Treatment/ID") %>%
+  pivot_longer(cols = c(3:26), 
+               names_to = "well_ID", 
+               values_to = "Treatment")
+
+#joining 
+synchrony_index_with_treatment_data <- left_join(synchrony_index_data, treatment, by = c("file_name", "time_point", "well_ID"))
+```
+
+\
+
+```{r}
+#Creates new df for the different timepoints 
+baseline_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==000) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(Baseline_si=`Synchrony Index`)
+
+timepoint1_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==001) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint1_si=`Synchrony Index`)
+
+timepoint2_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==002) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint2_si=`Synchrony Index`)
+
+timepoint3_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==003) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint3_si=`Synchrony Index`)
+
+timepoint4_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==004) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint4_si=`Synchrony Index`)
+
+timepoint5_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==005) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint5_si=`Synchrony Index`)
+
+timepoint6_for_SI <- synchrony_index_with_treatment_data %>%
+  filter(time_point==006) %>%
+  select(-c("file_name", "Well.Averages.x", "Well.Averages.y", "time_point", "plate_number.y")) %>%
+  rename(timepoint6_si=`Synchrony Index`)
+
+#then need to combine them / MERGE
+merged_data_si <- merge(baseline_for_SI, timepoint1_for_SI, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_si <- merge(merged_data_si, timepoint2_for_SI, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_si <- merge(merged_data_si, timepoint3_for_SI, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_si <- merge(merged_data_si, timepoint4_for_SI, by = c("well_ID", "Treatment", "plate_number.x"))
+merged_data_si <- merge(merged_data_si, timepoint5_for_SI, by = c("well_ID", "Treatment", "plate_number.x"))  
+merged_data_si <- merge(merged_data_si, timepoint6_for_SI, by = c("well_ID", "Treatment", "plate_number.x"))
+
+#normalise
+merged_data_normalised <- mutate(merged_data_si, "0"= Baseline_si - Baseline_si) 
+merged_data_normalised. <- mutate(merged_data_normalised, "15"= timepoint1_si - Baseline_si) 
+merged_data_normalised.. <- mutate(merged_data_normalised., "35"= timepoint2_si - Baseline_si)
+merged_data_normalised... <- mutate(merged_data_normalised.., "55"= timepoint3_si - Baseline_si)
+merged_data_normalised__ <- mutate(merged_data_normalised..., "75"= timepoint4_si - Baseline_si)
+merged_data_normalised_. <- mutate(merged_data_normalised__, "95"= timepoint5_si - Baseline_si)
+merged_data_normalised._ <- mutate(merged_data_normalised_., "115"= timepoint6_si - Baseline_si) 
+
+#pivot longer - so only normalised data is there
+SI_normalised <- merged_data_normalised._ %>%
+  select(-c(4:10)) %>%
+  pivot_longer(cols = c(4:10), 
+               names_to = "Timepoint", 
+               values_to = "Normalised_data")
+
+#make numeric so can geom_line
+SI_normalised$Timepoint <- as.numeric(SI_normalised$Timepoint)
+
+#remove NA
+ SI_normalised <- na.omit(SI_normalised)
+```
+
+```{r}
+SI_normalised_avg <- SI_normalised %>%
+  group_by(Treatment, Timepoint) %>% 
+  mutate(average = mean(Normalised_data))
+
+shapiro.test(SI_normalised_avg$Normalised_data)
+
+SI_normalised_avg$Treatment <- as.factor(SI_normalised_avg$Treatment)
+SI_normalised_avg$`plate_number.x` <- as.factor(SI_normalised_avg$`plate_number.x`)
+SI_normalised_avg$Timepoint <- as.factor(SI_normalised_avg$Timepoint)
+
+SI_normalised_avg$Timepoint <- as.numeric(SI_normalised_avg$Timepoint)
+```
+
+```{r}
+data_for_stats <- SI_normalised_avg %>% 
+ drop_na(`Normalised_data`) %>%
+  mutate("LogParameter"=log(`Normalised_data`)) %>%
+filter(is.finite(LogParameter))
+
+model_treatment <- lm(`LogParameter`~Treatment*Timepoint, data = data_for_stats) 
+ #diagnostic plots
+Diagnostic_plot <- autoplot(model_treatment, smooth.colour = NA) 
+print(Diagnostic_plot)
+
+
+anova(model_treatment)
+
+summary(aov(model_treatment))
+```
+
+```{r}
+TukeyHSD(aov(model_treatment), "Treatment", ordered = TRUE)
+
+summary(aov(model_treatment), test = adjusted(type = "BH"))
+
+```
+
+sig treatment between psilocin and vehicle
+
+```{r}
+SI_normalised_avg$Timepoint <- as.numeric(SI_normalised_avg$Timepoint)
+
+SI_normalised_avg <- SI_normalised_avg %>%
+  mutate(Treatment = fct_relevel(Treatment, "Vehicle", "5-MEO-DMT [0.5 µM]", "Psilocin [1 µM]", "DOI [10 µM]"))
+
+ggplot(SI_normalised_avg, aes(x = Timepoint, colour = Treatment)) +
+  geom_line(aes(y=average)) +
+  geom_point(aes(y=Normalised_data, shape = Treatment)) +
+  labs(title = "Normalised Synchrony Index by Treatment",
+       x = "Time (mins)",
+       y = "Normalised from baseline of Synchrony Index")+
+  theme_cowplot()
+```
+
+maybe psilocin slighlty more inc??
